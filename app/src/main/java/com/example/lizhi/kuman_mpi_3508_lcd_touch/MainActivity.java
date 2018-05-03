@@ -1,7 +1,10 @@
 package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
 
 /**
  * Skeleton of an Android Things activity.
@@ -24,9 +27,55 @@ import android.os.Bundle;
  */
 public class MainActivity extends Activity {
 
+    private Mpi3508LcdTouchDriver mTouchDriver;
+
+    private Button mButton1;
+    private Button mButton2;
+    private Button mButton3;
+    private Button mButton4;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mButton1 = findViewById(R.id.button);
+        mButton1.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mButton1.setBackgroundColor(Color.BLUE);
+            }
+        });
+
+        mButton2 = findViewById(R.id.button2);
+        mButton2.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mButton2.setBackgroundColor(Color.BLUE);
+            }
+        });
+        mButton3 = findViewById(R.id.button3);
+        mButton3.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mButton3.setBackgroundColor(Color.BLUE);
+            }
+        });
+        mButton4 = findViewById(R.id.button4);
+        mButton4.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mButton4.setBackgroundColor(Color.BLUE);
+            }
+        });
+
+        mTouchDriver = new Mpi3508LcdTouchDriver();
+        mTouchDriver.run();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        mTouchDriver.stop();
     }
 }

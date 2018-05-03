@@ -10,6 +10,7 @@ import com.google.android.things.userdriver.input.InputDriver;
 import com.google.android.things.userdriver.input.InputDriverEvent;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -19,7 +20,7 @@ import java.util.List;
 public class Mpi3508LcdTouchDriver {
     private final static int X_RESOLUTION = 480;
     private final static int Y_RESOLUTION = 480;
-    private final static int SPI_DEVICE_CHANNEL = 0;
+    private final static int SPI_DEVICE_CHANNEL = 1;
     private final static int SPI_DEVICE_FREQUENCY = 50000;
 
     private InputDriver mInputDriver;
@@ -31,15 +32,34 @@ public class Mpi3508LcdTouchDriver {
 
     private static final String TAG = "MPI-3508-LCD-Touch-Driver";
 
+
+
+    private boolean mIsPressing = false;
+    private boolean mOutlinerDetected = false;
+    private int cX = -1; // The current touching x-value
+    private int cY = -1; // The current touching y-value
+    private long xyTime = -1L;
+
     // TODO: what are these?
     private final byte[] xRead = new byte[]{(byte) 0xd0, (byte) 0x00, (byte) 0x00};
     private final byte[] yRead = new byte[]{(byte) 0x90, (byte) 0x00, (byte) 0x00};
     private final byte[] xBuffer = new byte[3];
     private final byte[] yBuffer = new byte[3];
 
+    private final boolean switchXY = true;
+    private final boolean inverseX = false;
+    private final boolean inverseY = true;
+    private final boolean flakeynessCorrection = true;
+    private final boolean shiverringCorrection = true;
+
     public void run() {
         mStopped = false;
-        initSpiDevice();
+        try {
+            initSpiDevice();
+        } catch (UnableToOpenTouchDriverException e) {
+            Log.e(TAG, "Mpi3508LcdTouchDriver.run: ", e);
+            return;
+        }
 
         // TODO: tune the fuzz and flat values.
         mInputDriver = new InputDriver.Builder()
@@ -53,12 +73,18 @@ public class Mpi3508LcdTouchDriver {
             @Override
             public void run() {
                 while (!mInputThread.isInterrupted() && !mStopped) {
-                    TouchInput touchInput = getTouchInput();
-                    InputDriverEvent event = new InputDriverEvent();
-                    event.setPosition(MotionEvent.AXIS_X, touchInput.x);
-                    event.setPosition(MotionEvent.AXIS_Y, touchInput.y);
-                    event.setContact(touchInput.pressing);
-                    mInputDriver.emit(new InputDriverEvent());
+                    try {
+                        TouchInput touchInput = getTouchInput();
+                        InputDriverEvent event = new InputDriverEvent();
+                        event.setPosition(MotionEvent.AXIS_X, touchInput.x);
+                        event.setPosition(MotionEvent.AXIS_Y, touchInput.y);
+                        event.setContact(touchInput.pressing);
+
+                        Log.e(TAG, "Mpi3508LcdTouchDriver.run: emitting: " + touchInput.toString());
+                        mInputDriver.emit(new InputDriverEvent());
+                    } catch (TouchDriverReadingException e) {
+                        Log.e(TAG, "Mpi3508LcdTouchDriver.run: ", e);
+                    }
                 }
             }
         });
@@ -99,6 +125,8 @@ public class Mpi3508LcdTouchDriver {
         try {
             mDevice.transfer(xRead, xBuffer, 3);
             mDevice.transfer(yRead, yBuffer, 3);
+            // Log.e(TAG, "Mpi3508LcdTouchDriver.getTouchInput: read xBuffer: " + Arrays.toString(xBuffer));
+            // Log.e(TAG, "Mpi3508LcdTouchDriver.getTouchInput: read yBuffer: " + Arrays.toString(yBuffer));
         } catch (IOException e) {
             Log.e(TAG, "getTouchInput: ", e);
             throw new TouchDriverReadingException();
@@ -180,9 +208,9 @@ public class Mpi3508LcdTouchDriver {
         mOutlinerDetected = outlierX || outlierY;
 
         if (press) {
-            Log.v(LOG_TAG, "x,y=" + originalX + "," + originalY + " | x,y=" + x + "," + y + " | cx,cy=" + cX + "," + cY + " | dx,dy=" + applicableXErrorMargin + "," + applicableYErrorMargin + " (" + millisSinceLastTouch + "ms)" + (outlierX ? " CORRECTED-X!!!" : "") + (outlierY ? " CORRECTED-Y!!!" : "") + (shiverring ? " SHIVERRING!!!" : ""));
+            Log.v(TAG, "x,y=" + originalX + "," + originalY + " | x,y=" + x + "," + y + " | cx,cy=" + cX + "," + cY + " | dx,dy=" + applicableXErrorMargin + "," + applicableYErrorMargin + " (" + millisSinceLastTouch + "ms)" + (outlierX ? " CORRECTED-X!!!" : "") + (outlierY ? " CORRECTED-Y!!!" : "") + (shiverring ? " SHIVERRING!!!" : ""));
         } else if (mIsPressing && !press) {
-            Log.v(LOG_TAG, "release");
+            Log.v(TAG, "release");
         }
 
         mIsPressing = press;

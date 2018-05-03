@@ -14,4 +14,16 @@ public class TouchInput {
         this.y = y;
         this.pressing = touching;
     }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("TouchInput x: ");
+        sb.append(this.x);
+        sb.append(", y: ");
+        sb.append(this.y);
+        sb.append(", pressing: ");
+        sb.append(this.pressing);
+        return sb.toString();
+    }
 }
