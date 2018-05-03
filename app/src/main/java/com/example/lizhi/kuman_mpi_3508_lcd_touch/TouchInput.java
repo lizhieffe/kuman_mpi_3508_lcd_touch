@@ -7,11 +7,11 @@ package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 public class TouchInput {
     public int x;
     public int y;
-    public boolean touching;
+    public boolean pressing;
 
     public TouchInput(int x, int y, boolean touching) {
         this.x = x;
         this.y = y;
-        this.touching = touching;
+        this.pressing = touching;
     }
 }

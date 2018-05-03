@@ -1,11 +1,16 @@
 package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 
-import android.view.InputDevice;
+import android.util.Log;
 import android.view.MotionEvent;
 
+import com.google.android.things.pio.PeripheralManager;
+import com.google.android.things.pio.SpiDevice;
 import com.google.android.things.userdriver.UserDriverManager;
 import com.google.android.things.userdriver.input.InputDriver;
 import com.google.android.things.userdriver.input.InputDriverEvent;
+
+import java.io.IOException;
+import java.util.List;
 
 /**
  * Created by lizhi on 5/2/18.
@@ -14,15 +19,28 @@ import com.google.android.things.userdriver.input.InputDriverEvent;
 public class Mpi3508LcdTouchDriver {
     private final static int X_RESOLUTION = 480;
     private final static int Y_RESOLUTION = 480;
+    private final static int SPI_DEVICE_CHANNEL = 0;
+    private final static int SPI_DEVICE_FREQUENCY = 50000;
 
     private InputDriver mInputDriver;
     private Thread mInputThread;
 
-    boolean mStopped;
+    private SpiDevice mDevice;
+
+    private volatile boolean mStopped;
 
     private static final String TAG = "MPI-3508-LCD-Touch-Driver";
 
+    // TODO: what are these?
+    private final byte[] xRead = new byte[]{(byte) 0xd0, (byte) 0x00, (byte) 0x00};
+    private final byte[] yRead = new byte[]{(byte) 0x90, (byte) 0x00, (byte) 0x00};
+    private final byte[] xBuffer = new byte[3];
+    private final byte[] yBuffer = new byte[3];
+
     public void run() {
+        mStopped = false;
+        initSpiDevice();
+
         // TODO: tune the fuzz and flat values.
         mInputDriver = new InputDriver.Builder()
                 .setName(TAG)
@@ -35,13 +53,168 @@ public class Mpi3508LcdTouchDriver {
             @Override
             public void run() {
                 while (!mInputThread.isInterrupted() && !mStopped) {
-                    try {
-                        TouchInput touchInput = getTouchInput();
-                        mInputDriver.emit(new InputDriverEvent());
-                    }
+                    TouchInput touchInput = getTouchInput();
+                    InputDriverEvent event = new InputDriverEvent();
+                    event.setPosition(MotionEvent.AXIS_X, touchInput.x);
+                    event.setPosition(MotionEvent.AXIS_Y, touchInput.y);
+                    event.setContact(touchInput.pressing);
+                    mInputDriver.emit(new InputDriverEvent());
                 }
             }
         });
         mInputThread.start();
+    }
+
+    public void stop() {
+        mStopped = true;
+        if (mInputThread != null) {
+            mInputThread.interrupt();
+        }
+        UserDriverManager.getInstance().unregisterInputDriver(mInputDriver);
+    }
+
+    private void initSpiDevice() throws UnableToOpenTouchDriverException {
+        List<String> deviceList = PeripheralManager.getInstance().getSpiBusList();
+
+        Log.w(TAG, "Available SPI device list: " + deviceList);
+
+        if (deviceList.isEmpty()) {
+            Log.e(TAG, "No SPI device found");
+            throw new UnableToOpenTouchDriverException();
+        }
+
+        final String spiName = deviceList.get(SPI_DEVICE_CHANNEL);
+        try {
+            mDevice = PeripheralManager.getInstance().openSpiDevice(spiName);
+            mDevice.setFrequency(SPI_DEVICE_FREQUENCY);
+            // TODO: what is this?
+            mDevice.transfer(new byte[]{(byte) 0x80, (byte) 0x00, (byte) 0x000}, new byte[4], 1);
+        } catch (IOException e) {
+            Log.e(TAG, "initSpiDevice: ", e);
+            throw new UnableToOpenTouchDriverException();
+        }
+    }
+
+    private TouchInput getTouchInput() throws TouchDriverReadingException {
+        try {
+            mDevice.transfer(xRead, xBuffer, 3);
+            mDevice.transfer(yRead, yBuffer, 3);
+        } catch (IOException e) {
+            Log.e(TAG, "getTouchInput: ", e);
+            throw new TouchDriverReadingException();
+        }
+
+        byte[] buffer = concat(xBuffer, yBuffer);
+        boolean press = isPressing(buffer);
+
+        int screenWidth = X_RESOLUTION;
+        int screenHeight = Y_RESOLUTION;
+        float halfScreenWidth = screenWidth / 2f;
+        float halfScreenHeight = screenHeight / 2f;
+
+        int originalX = (buffer[2] + (buffer[1] << 8) >> 4);
+        int originalY = (buffer[5] + (buffer[4] << 8) >> 4);
+        if (switchXY) {
+            int temp = originalY;
+            originalY = originalX;
+            originalX = temp;
+        }
+        int x = (int) ((originalX / 2030f) * screenWidth);
+        int y = (int) ((originalY / 2100f) * screenHeight);
+
+        int yErrorMargin = 24; // TODO make parameter
+        float halfYDistance = halfScreenHeight - yErrorMargin;
+        float travelledYDistance = y < halfScreenHeight ? halfYDistance - y - yErrorMargin : y - halfScreenHeight - yErrorMargin;
+        int applicableYErrorMargin = (int) (((1 / halfYDistance) * travelledYDistance) * yErrorMargin);
+        if (y < halfScreenHeight) {
+            y = Math.max(0, y - applicableYErrorMargin);
+        } else if (y > halfScreenHeight) {
+            y = Math.min(screenHeight, y + applicableYErrorMargin);
+        }
+
+        int xErrorMargin = 20; // TODO make parameter
+        float halfXDistance = halfScreenWidth - xErrorMargin;
+        float travelledXDistance = x < halfScreenWidth ? halfXDistance - x - xErrorMargin : x - halfScreenWidth - xErrorMargin;
+        int applicableXErrorMargin = (int) (((1 / halfXDistance) * travelledXDistance) * xErrorMargin);
+        if (x < halfScreenWidth) {
+            x = Math.max(0, x - applicableXErrorMargin);
+        } else {
+            x = Math.min(screenWidth, x + applicableXErrorMargin);
+        }
+
+        if (inverseX) {
+            x = (int) (x < halfScreenWidth ? halfScreenWidth+ (Math.abs(halfScreenWidth - x)) : halfScreenWidth - (Math.abs(halfScreenWidth - x)));
+        }
+        if (inverseY) {
+            y = (int) (y < halfScreenHeight ? halfScreenHeight + (Math.abs(halfScreenHeight - y)) : halfScreenHeight - (Math.abs(halfScreenHeight - y)));
+        }
+
+        long millisSinceLastTouch = System.currentTimeMillis() - xyTime;
+        boolean outlierX = false;
+        boolean outlierY = false;
+        boolean shiverring = false;
+        boolean keepsPressing = press && mIsPressing;
+        if (keepsPressing && !mOutlinerDetected) {
+            boolean fastXyTracking = millisSinceLastTouch <= 50;
+            if (fastXyTracking && cX != -1) {
+                int xOffset = Math.abs(x - cX);
+                if (flakeynessCorrection && xOffset > 12) {
+                    outlierX = true;
+                    x = cX;
+                } else if (shiverringCorrection && xOffset <= 12 && xOffset > 0) {
+                    shiverring = true;
+                    x = cX;
+                }
+            }
+            if (fastXyTracking && cY != -1) {
+                int yOffset = Math.abs(y - cY);
+                if (flakeynessCorrection && yOffset > 12) {
+                    outlierY = true;
+                    y = cY;
+                } else if (shiverringCorrection && yOffset <= 12 && yOffset > 0) {
+                    shiverring = true;
+                    y = cY;
+                }
+            }
+        }
+        mOutlinerDetected = outlierX || outlierY;
+
+        if (press) {
+            Log.v(LOG_TAG, "x,y=" + originalX + "," + originalY + " | x,y=" + x + "," + y + " | cx,cy=" + cX + "," + cY + " | dx,dy=" + applicableXErrorMargin + "," + applicableYErrorMargin + " (" + millisSinceLastTouch + "ms)" + (outlierX ? " CORRECTED-X!!!" : "") + (outlierY ? " CORRECTED-Y!!!" : "") + (shiverring ? " SHIVERRING!!!" : ""));
+        } else if (mIsPressing && !press) {
+            Log.v(LOG_TAG, "release");
+        }
+
+        mIsPressing = press;
+        TouchInput touchInput = new TouchInput(x, y, press);
+
+        if (press) {
+            xyTime = System.currentTimeMillis();
+            cX = x;
+            cY = y;
+        } else {
+            cX = -1;
+            cY = -1;
+        }
+
+        return touchInput;
+    }
+
+    private byte[] concat(byte[]... arrays) {
+        int length = 0;
+        for (byte[] array : arrays) {
+            length += array.length;
+        }
+        byte[] result = new byte[length];
+        int destPos = 0;
+        for (byte[] array : arrays) {
+            System.arraycopy(array, 0, result, destPos, array.length);
+            destPos += array.length;
+        }
+        return result;
+    }
+
+    private boolean isPressing(byte[] buffer) {
+        return buffer[4] != 127;
     }
 }
