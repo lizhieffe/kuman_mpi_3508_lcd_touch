@@ -1,6 +1,7 @@
 package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 
 import android.util.Log;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 
 import com.google.android.things.pio.PeripheralManager;
@@ -10,7 +11,6 @@ import com.google.android.things.userdriver.input.InputDriver;
 import com.google.android.things.userdriver.input.InputDriverEvent;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -18,10 +18,8 @@ import java.util.List;
  */
 
 public class Mpi3508LcdTouchDriver {
-    private final static int X_RESOLUTION = 480;
-    private final static int Y_RESOLUTION = 480;
     private final static int SPI_DEVICE_CHANNEL = 1;
-    private final static int SPI_DEVICE_FREQUENCY = 50000;
+    private final static int SPI_DEVICE_FREQUENCY = 5000;
 
     private InputDriver mInputDriver;
     private Thread mInputThread;
@@ -47,10 +45,18 @@ public class Mpi3508LcdTouchDriver {
     private final byte[] yBuffer = new byte[3];
 
     private final boolean switchXY = true;
-    private final boolean inverseX = false;
+    private final boolean inverseX = true;
     private final boolean inverseY = true;
     private final boolean flakeynessCorrection = true;
     private final boolean shiverringCorrection = true;
+
+    private int mXResolution;
+    private int mYResolution;
+
+    public Mpi3508LcdTouchDriver(int xResolution, int yResolution) {
+        mXResolution = xResolution;
+        mYResolution = yResolution;
+    }
 
     public void run() {
         mStopped = false;
@@ -64,24 +70,25 @@ public class Mpi3508LcdTouchDriver {
         // TODO: tune the fuzz and flat values.
         mInputDriver = new InputDriver.Builder()
                 .setName(TAG)
-                .setAxisConfiguration(MotionEvent.AXIS_X, 0, X_RESOLUTION, 1, 1)
-                .setAxisConfiguration(MotionEvent.AXIS_Y, 0, Y_RESOLUTION, 1, 1)
+                .setAxisConfiguration(MotionEvent.AXIS_X, 0, mXResolution,0, 0)
+                .setAxisConfiguration(MotionEvent.AXIS_Y, 0, mYResolution,0, 0)
                 .build();
         UserDriverManager.getInstance().registerInputDriver(mInputDriver);
 
         mInputThread = new Thread(new Runnable() {
             @Override
             public void run() {
+                InputDriverEvent event = new InputDriverEvent();
                 while (!mInputThread.isInterrupted() && !mStopped) {
                     try {
                         TouchInput touchInput = getTouchInput();
-                        InputDriverEvent event = new InputDriverEvent();
+                        event.clear();
                         event.setPosition(MotionEvent.AXIS_X, touchInput.x);
                         event.setPosition(MotionEvent.AXIS_Y, touchInput.y);
                         event.setContact(touchInput.pressing);
 
-                        Log.e(TAG, "Mpi3508LcdTouchDriver.run: emitting: " + touchInput.toString());
-                        mInputDriver.emit(new InputDriverEvent());
+                        // Log.e(TAG, "Mpi3508LcdTouchDriver.run: emitting: " + touchInput.toString());
+                        mInputDriver.emit(event);
                     } catch (TouchDriverReadingException e) {
                         Log.e(TAG, "Mpi3508LcdTouchDriver.run: ", e);
                     }
@@ -135,8 +142,8 @@ public class Mpi3508LcdTouchDriver {
         byte[] buffer = concat(xBuffer, yBuffer);
         boolean press = isPressing(buffer);
 
-        int screenWidth = X_RESOLUTION;
-        int screenHeight = Y_RESOLUTION;
+        int screenWidth = mXResolution;
+        int screenHeight = mYResolution;
         float halfScreenWidth = screenWidth / 2f;
         float halfScreenHeight = screenHeight / 2f;
 

@@ -3,7 +3,11 @@ package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.Window;
 import android.widget.Button;
 
 /**
@@ -35,9 +39,26 @@ public class MainActivity extends Activity {
     private Button mButton4;
 
     @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        Log.e("===lizhi", "onTouchEvent: " +event.getAction() + " " + event.getX() + " " + event.getY());
+        return super.onTouchEvent(event);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+        int width = displayMetrics.widthPixels;
+        int height = displayMetrics.heightPixels;
+        Log.e("===lizhi", "onCreate: screen resolution: " + width + " " + height);
+
+
         setContentView(R.layout.activity_main);
+        Log.e("===lizhi", "isInTouchMode: " + findViewById(R.id.main_view).isInTouchMode());
 
         mButton1 = findViewById(R.id.button);
         mButton1.setOnClickListener(new View.OnClickListener() {
@@ -69,7 +90,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        mTouchDriver = new Mpi3508LcdTouchDriver();
+        mTouchDriver = new Mpi3508LcdTouchDriver(width, height);
         mTouchDriver.run();
     }
 
