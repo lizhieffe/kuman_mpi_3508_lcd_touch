@@ -4,11 +4,10 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 
-import com.google.android.things.pio.PeripheralManager;
+import com.google.android.things.pio.PeripheralManagerService;
 import com.google.android.things.pio.SpiDevice;
+import com.google.android.things.userdriver.InputDriver;
 import com.google.android.things.userdriver.UserDriverManager;
-import com.google.android.things.userdriver.input.InputDriver;
-import com.google.android.things.userdriver.input.InputDriverEvent;
 
 import java.io.IOException;
 import java.util.List;
@@ -19,7 +18,7 @@ import java.util.List;
 
 public class Mpi3508LcdTouchDriver {
     private final static int SPI_DEVICE_CHANNEL = 1;
-    private final static int SPI_DEVICE_FREQUENCY = 5000;
+    private final static int SPI_DEVICE_FREQUENCY = 50000;
 
     private InputDriver mInputDriver;
     private Thread mInputThread;
@@ -68,27 +67,22 @@ public class Mpi3508LcdTouchDriver {
         }
 
         // TODO: tune the fuzz and flat values.
-        mInputDriver = new InputDriver.Builder()
+        mInputDriver = new InputDriver.Builder(InputDevice.SOURCE_TOUCHSCREEN)
                 .setName(TAG)
-                .setAxisConfiguration(MotionEvent.AXIS_X, 0, mXResolution,0, 0)
-                .setAxisConfiguration(MotionEvent.AXIS_Y, 0, mYResolution,0, 0)
+                .setAbsMax(MotionEvent.AXIS_X, mXResolution)
+                .setAbsMax(MotionEvent.AXIS_Y, mYResolution)
                 .build();
-        UserDriverManager.getInstance().registerInputDriver(mInputDriver);
+        UserDriverManager.getManager().registerInputDriver(mInputDriver);
 
         mInputThread = new Thread(new Runnable() {
             @Override
             public void run() {
-                InputDriverEvent event = new InputDriverEvent();
                 while (!mInputThread.isInterrupted() && !mStopped) {
                     try {
                         TouchInput touchInput = getTouchInput();
-                        event.clear();
-                        event.setPosition(MotionEvent.AXIS_X, touchInput.x);
-                        event.setPosition(MotionEvent.AXIS_Y, touchInput.y);
-                        event.setContact(touchInput.pressing);
 
                         // Log.e(TAG, "Mpi3508LcdTouchDriver.run: emitting: " + touchInput.toString());
-                        mInputDriver.emit(event);
+                        mInputDriver.emit(touchInput.x, touchInput.y, touchInput.pressing);
                     } catch (TouchDriverReadingException e) {
                         Log.e(TAG, "Mpi3508LcdTouchDriver.run: ", e);
                     }
@@ -103,11 +97,12 @@ public class Mpi3508LcdTouchDriver {
         if (mInputThread != null) {
             mInputThread.interrupt();
         }
-        UserDriverManager.getInstance().unregisterInputDriver(mInputDriver);
+        UserDriverManager.getManager().unregisterInputDriver(mInputDriver);
     }
 
     private void initSpiDevice() throws UnableToOpenTouchDriverException {
-        List<String> deviceList = PeripheralManager.getInstance().getSpiBusList();
+        PeripheralManagerService spiService = new PeripheralManagerService();
+        List<String> deviceList = spiService.getSpiBusList();
 
         Log.w(TAG, "Available SPI device list: " + deviceList);
 
@@ -118,7 +113,7 @@ public class Mpi3508LcdTouchDriver {
 
         final String spiName = deviceList.get(SPI_DEVICE_CHANNEL);
         try {
-            mDevice = PeripheralManager.getInstance().openSpiDevice(spiName);
+            mDevice = spiService.openSpiDevice(spiName);
             mDevice.setFrequency(SPI_DEVICE_FREQUENCY);
             // TODO: what is this?
             mDevice.transfer(new byte[]{(byte) 0x80, (byte) 0x00, (byte) 0x000}, new byte[4], 1);

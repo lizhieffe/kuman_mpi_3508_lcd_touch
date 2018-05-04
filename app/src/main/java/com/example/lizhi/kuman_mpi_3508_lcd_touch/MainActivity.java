@@ -1,14 +1,20 @@
 package com.example.lizhi.kuman_mpi_3508_lcd_touch;
 
 import android.app.Activity;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.Bundle;
+import android.support.constraint.ConstraintLayout;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.LinearLayout;
 
 /**
  * Skeleton of an Android Things activity.
@@ -37,12 +43,6 @@ public class MainActivity extends Activity {
     private Button mButton2;
     private Button mButton3;
     private Button mButton4;
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        Log.e("===lizhi", "onTouchEvent: " +event.getAction() + " " + event.getX() + " " + event.getY());
-        return super.onTouchEvent(event);
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,6 +90,9 @@ public class MainActivity extends Activity {
             }
         });
 
+        layout=(ConstraintLayout) findViewById(R.id.main_view);
+        layout.addView(new CustomView(MainActivity.this));
+
         mTouchDriver = new Mpi3508LcdTouchDriver(width, height);
         mTouchDriver.run();
     }
@@ -98,5 +101,40 @@ public class MainActivity extends Activity {
     protected void onStop() {
         super.onStop();
         mTouchDriver.stop();
+    }
+
+    ConstraintLayout layout;
+    float x = 0;
+    float y = 0;
+
+    public class CustomView extends View {
+
+        Bitmap mBitmap;
+        Paint paint;
+
+        public CustomView(Context context) {
+            super(context);
+            mBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+            paint = new Paint();
+            paint.setColor(Color.RED);
+            paint.setStyle(Paint.Style.FILL);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawCircle(x, y, 50, paint);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (event.getAction() == MotionEvent.ACTION_DOWN ||
+                    event.getAction() == MotionEvent.ACTION_MOVE) {
+                x = event.getX();
+                y = event.getY();
+                invalidate();
+            }
+            return true;
+        }
     }
 }
