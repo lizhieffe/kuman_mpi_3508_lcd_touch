@@ -66,6 +66,7 @@ public class Mpi3508LcdTouchDriver {
             return;
         }
 
+
         // TODO: tune the fuzz and flat values.
         mInputDriver = new InputDriver.Builder(InputDevice.SOURCE_TOUCHSCREEN)
                 .setName(TAG)
@@ -80,9 +81,9 @@ public class Mpi3508LcdTouchDriver {
                 while (!mInputThread.isInterrupted() && !mStopped) {
                     try {
                         TouchInput touchInput = getTouchInput();
-
-                        // Log.e(TAG, "Mpi3508LcdTouchDriver.run: emitting: " + touchInput.toString());
-                        mInputDriver.emit(touchInput.x, touchInput.y, touchInput.pressing);
+                        if (touchInput != null) {
+                            mInputDriver.emit(touchInput.x, touchInput.y, touchInput.pressing);
+                        }
                     } catch (TouchDriverReadingException e) {
                         Log.e(TAG, "Mpi3508LcdTouchDriver.run: ", e);
                     }
@@ -152,6 +153,15 @@ public class Mpi3508LcdTouchDriver {
         int x = (int) ((originalX / 2030f) * screenWidth);
         int y = (int) ((originalY / 2100f) * screenHeight);
 
+        boolean startPressing = press && !mIsPressing;
+        if (startPressing) {
+            // When the user first touch the screen after releasing, the hardware may generate a
+            // incorrect y value. Discard this result.
+            if (y == 0) {
+                return null;
+            }
+        }
+
         int yErrorMargin = 24; // TODO make parameter
         float halfYDistance = halfScreenHeight - yErrorMargin;
         float travelledYDistance = y < halfScreenHeight ? halfYDistance - y - yErrorMargin : y - halfScreenHeight - yErrorMargin;
@@ -210,7 +220,13 @@ public class Mpi3508LcdTouchDriver {
         mOutlinerDetected = outlierX || outlierY;
 
         if (press) {
-            Log.v(TAG, "x,y=" + originalX + "," + originalY + " | x,y=" + x + "," + y + " | cx,cy=" + cX + "," + cY + " | dx,dy=" + applicableXErrorMargin + "," + applicableYErrorMargin + " (" + millisSinceLastTouch + "ms)" + (outlierX ? " CORRECTED-X!!!" : "") + (outlierY ? " CORRECTED-Y!!!" : "") + (shiverring ? " SHIVERRING!!!" : ""));
+            Log.v(TAG, "x,y=" + originalX + "," + originalY
+                    + " | x,y=" + x + "," + y
+                    + " | cx,cy=" + cX + "," + cY
+                    + " | dx,dy=" + applicableXErrorMargin + "," + applicableYErrorMargin
+                    + " (" + millisSinceLastTouch + "ms)"
+                    + (outlierX ? " CORRECTED-X!!!" : "") + (outlierY ? " CORRECTED-Y!!!" : "")
+                    + (shiverring ? " SHIVERRING!!!" : ""));
         } else if (mIsPressing && !press) {
             Log.v(TAG, "release");
         }
